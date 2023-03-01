@@ -5,24 +5,40 @@ const EPSILON: f64 = 0.000001;
 pub struct Glicko1 {
     pub rating: f64,
     pub sigma: f64,
-    pub rd: f64
+    pub rd: f64,
 }
 
+#[derive(Copy, Clone)]
 pub struct Glicko2 {
     pub mu: f64,
     pub sigma: f64,
-    pub phi: f64
+    pub phi: f64,
 }
 
 impl Glicko2 {
-    pub fn from_glicko1(g1: &Glicko1) -> Self{
-        Glicko2 { mu: (g1.rating - 1500.0) / FACTOR, sigma: g1.sigma, phi: g1.rd / FACTOR}
+    pub fn from_glicko1(g1: &Glicko1) -> Self {
+        Glicko2 {
+            mu: (g1.rating - 1500.0) / FACTOR,
+            sigma: g1.sigma,
+            phi: g1.rd / FACTOR,
+        }
     }
 
-    fn update_glicko2_vars(self, phi_star: f64, v: f64, g_opponents: &Vec<&Glicko2>, scores: &Vec<f64>, sigma_prime: f64) -> Glicko2 {
+    fn update_glicko2_vars(
+        self,
+        phi_star: f64,
+        v: f64,
+        g_opponents: &Vec<&Glicko2>,
+        scores: &Vec<f64>,
+        sigma_prime: f64,
+    ) -> Glicko2 {
         let phi = 1f64 / (1f64 / phi_star.powi(2) + 1f64 / v).sqrt();
         let mu = self.mu + phi.powi(2) * compute_delta(&self, g_opponents, scores);
-        Glicko2 { mu, sigma: sigma_prime, phi}
+        Glicko2 {
+            mu,
+            sigma: sigma_prime,
+            phi,
+        }
     }
 
     pub fn process_matches(self, g_opponents: &Vec<&Glicko2>, scores: &Vec<f64>) -> Glicko2 {
@@ -37,23 +53,32 @@ impl Glicko2 {
 }
 
 impl Glicko1 {
-    pub fn from_glicko2(g2: &Glicko2) -> Self{
-        Glicko1 { rating: g2.mu * FACTOR + 1500.0, sigma: g2.sigma, rd: g2.phi * FACTOR }
+    pub fn from_glicko2(g2: &Glicko2) -> Self {
+        Glicko1 {
+            rating: g2.mu * FACTOR + 1500.0,
+            sigma: g2.sigma,
+            rd: g2.phi * FACTOR,
+        }
     }
 }
 
 fn e(mu: f64, mu_j: f64, phi_j: f64) -> f64 {
-	1.0 / (1.0 + (-g(phi_j)*(mu-mu_j)).exp())
+    1.0 / (1.0 + (-g(phi_j) * (mu - mu_j)).exp())
 }
 
 fn g(phi: f64) -> f64 {
-	1.0 / (1.0 + 3.0 * phi.powi(2) / std::f64::consts::PI.powi(2)).sqrt()
+    1.0 / (1.0 + 3.0 * phi.powi(2) / std::f64::consts::PI.powi(2)).sqrt()
 }
 
 fn compute_v(g_cur: &Glicko2, g_opponents: &Vec<&Glicko2>) -> f64 {
-    let sum: f64 = g_opponents.iter().map(|g_op| {
-        g(g_op.phi).powi(2) * e(g_cur.mu, g_op.mu, g_op.phi) * (1f64 - e(g_cur.mu, g_op.mu, g_op.phi))
-    }).sum();
+    let sum: f64 = g_opponents
+        .iter()
+        .map(|g_op| {
+            g(g_op.phi).powi(2)
+                * e(g_cur.mu, g_op.mu, g_op.phi)
+                * (1f64 - e(g_cur.mu, g_op.mu, g_op.phi))
+        })
+        .sum();
     1f64 / sum
 }
 
@@ -72,7 +97,8 @@ fn compute_delta(g_cur: &Glicko2, g_opponents: &Vec<&Glicko2>, scores: &Vec<f64>
 fn sigma_by_illinois(g_cur: &Glicko2, delta: f64, v: f64) -> f64 {
     let a = g_cur.sigma.powi(2).ln();
     let f = |x: f64| -> f64 {
-        let t1: f64 = x.exp() * (delta.powi(2) - g_cur.phi.powi(2) - v - x.exp()) / 2f64 * (g_cur.phi.powi(2) + v + x.exp()).powi(2);
+        let t1: f64 = x.exp() * (delta.powi(2) - g_cur.phi.powi(2) - v - x.exp()) / 2f64
+            * (g_cur.phi.powi(2) + v + x.exp()).powi(2);
         let t2 = (x - a) / TAU.powi(2);
         t1 - t2
     };
@@ -87,14 +113,14 @@ fn sigma_by_illinois(g_cur: &Glicko2, delta: f64, v: f64) -> f64 {
         while f(a - TAU * k) < 0.0 {
             k += 1f64
         }
-        a - k*TAU
+        a - k * TAU
     };
 
     let mut f_a = f(a_prime);
     let mut f_b = f(b_prime);
 
     while (b_prime - a_prime).abs() > EPSILON {
-        let c = a_prime + (a_prime-b_prime)*f_a/(f_b-f_a);
+        let c = a_prime + (a_prime - b_prime) * f_a / (f_b - f_a);
         let f_c = f(c);
         let fc_fb = f_c * f_b;
         if fc_fb <= 0f64 {
@@ -123,33 +149,33 @@ mod tests {
         let p1 = Glicko2::from_glicko1(&Glicko1 {
             rating: 1500f64,
             sigma: 0.06f64,
-            rd: 200f64
+            rd: 200f64,
         });
-    
+
         let o1 = Glicko2::from_glicko1(&Glicko1 {
             rating: 1400f64,
             sigma: 0.06f64,
-            rd: 30f64
+            rd: 30f64,
         });
-    
+
         let o2 = Glicko2::from_glicko1(&Glicko1 {
             rating: 1550f64,
             sigma: 0.06f64,
-            rd: 100f64
+            rd: 100f64,
         });
-    
+
         let o3 = Glicko2::from_glicko1(&Glicko1 {
             rating: 1700f64,
             sigma: 0.06f64,
-            rd: 300f64
+            rd: 300f64,
         });
-    
+
         let scores: Vec<f64> = vec![1f64, 0f64, 0f64];
         let opps = vec![&o1, &o2, &o3];
-    
+
         let pf = p1.process_matches(&opps, &scores);
         let as_g1 = Glicko1::from_glicko2(&pf);
-    
+
         // println!("{:.2}, {:.2},{:.2}", as_g1.rating, as_g1.sigma, as_g1.rd);
         assert!((as_g1.rating - 1436.05).abs() < 0.01);
         assert!((as_g1.sigma - 0.06).abs() < 0.01);
@@ -173,30 +199,30 @@ mod tests {
         let p1: Glicko2 = Glicko2::from_glicko1(&Glicko1 {
             rating: 1500f64,
             sigma: 0.06f64,
-            rd: 200f64
+            rd: 200f64,
         });
-    
+
         let o1: Glicko2 = Glicko2::from_glicko1(&Glicko1 {
             rating: 1400f64,
             sigma: 0.06f64,
-            rd: 30f64
+            rd: 30f64,
         });
-    
+
         let o2: Glicko2 = Glicko2::from_glicko1(&Glicko1 {
             rating: 1550f64,
             sigma: 0.06f64,
-            rd: 100f64
+            rd: 100f64,
         });
-    
+
         let o3: Glicko2 = Glicko2::from_glicko1(&Glicko1 {
             rating: 1700f64,
             sigma: 0.06f64,
-            rd: 300f64
+            rd: 300f64,
         });
-    
+
         let scores: Vec<f64> = vec![1f64, 0f64, 0f64];
         let opps = vec![&o1, &o2, &o3];
-    
+
         let delta = compute_delta(&p1, &opps, &scores);
         assert!((delta + 0.483933260).abs() < 0.001)
     }

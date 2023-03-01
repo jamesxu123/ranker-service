@@ -186,6 +186,7 @@ dependencies = [
 name = "ranker-service"
 version = "0.1.0"
 dependencies = [
+ "rand",
  "tokio",
  "uuid",
 ]

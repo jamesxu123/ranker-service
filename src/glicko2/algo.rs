@@ -51,10 +51,9 @@ fn g(phi: f64) -> f64 {
 }
 
 fn compute_v(g_cur: &Glicko2, g_opponents: &Vec<&Glicko2>) -> f64 {
-    let mut sum: f64 = 0f64;
-    for g_op in g_opponents {
-        sum += g(g_op.phi).powi(2) * e(g_cur.mu, g_op.mu, g_op.phi) * (1f64 - e(g_cur.mu, g_op.mu, g_op.phi))
-    }
+    let sum: f64 = g_opponents.iter().map(|g_op| {
+        g(g_op.phi).powi(2) * e(g_cur.mu, g_op.mu, g_op.phi) * (1f64 - e(g_cur.mu, g_op.mu, g_op.phi))
+    }).sum();
     1f64 / sum
 }
 
@@ -152,9 +151,9 @@ mod tests {
         let as_g1 = Glicko1::from_glicko2(&pf);
     
         // println!("{:.2}, {:.2},{:.2}", as_g1.rating, as_g1.sigma, as_g1.rd);
-        assert!((as_g1.rating - 1436.05).abs() < 0.1);
-        assert!((as_g1.sigma - 0.06).abs() < 0.1);
-        assert!((as_g1.rd - 151.52).abs() < 0.1);
+        assert!((as_g1.rating - 1436.05).abs() < 0.01);
+        assert!((as_g1.sigma - 0.06).abs() < 0.01);
+        assert!((as_g1.rd - 151.52).abs() < 0.01);
     }
 
     #[test]

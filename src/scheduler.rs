@@ -1,4 +1,4 @@
-use std::{sync::{RwLock, Arc}, collections::HashMap};
+use std::sync::{RwLock, Arc};
 
 use crate::glicko2::algo::Glicko2;
 

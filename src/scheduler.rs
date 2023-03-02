@@ -180,23 +180,18 @@ impl SchedulerState {
                 "Cannot get next match while in NONE state",
             )),
             States::INIT => {
-                let mq = self.mq.write();
+                let q = self.mq.write().unwrap();
                 let hm = self.get_matches();
                 let matches = hm.write().unwrap();
-                match mq {
-                    Ok(q) => {
-                        if let Some(best) = q.peek_min() {
-                            let key = best.0;
-                            if let Some(val) = matches.get(key) {
-                                Ok(val.clone())
-                            } else {
-                                Err(SchedulerError::new("Match key not found"))
-                            }
-                        } else {
-                            Err(SchedulerError::new("Could not peek queue"))
-                        }
+                if let Some(best) = q.peek_min() {
+                    let key = best.0;
+                    if let Some(val) = matches.get(key) {
+                        Ok(val.clone())
+                    } else {
+                        Err(SchedulerError::new("Match key not found"))
                     }
-                    Err(_) => Err(SchedulerError::new("Lock failed (poisoned)")),
+                } else {
+                    Err(SchedulerError::new("Could not peek queue"))
                 }
             }
             States::CONTINUOUS => todo!(),
@@ -215,16 +210,11 @@ impl SchedulerState {
             Ok(m_lock) => {
                 let mut m = m_lock.write().unwrap();
                 let m_id = &m.match_pair_id;
-                let mq = self.mq.write();
-                match mq {
-                    Ok(mut q) => {
-                        q.change_priority_by(m_id, |i| *i += 1);
-                        m.judge_id = Some(judge.id.clone());
-                        m.visited += 1;
-                        Ok(m_lock.clone())
-                    }
-                    Err(_) => Err(SchedulerError::new("huh Lock failed (poisoned)")),
-                }
+                let mut q = self.mq.write().unwrap();
+                q.change_priority_by(m_id, |i| *i += 1);
+                m.judge_id = Some(judge.id.clone());
+                m.visited += 1;
+                Ok(m_lock.clone())
             }
             Err(e) => Err(e),
         }

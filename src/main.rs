@@ -9,10 +9,6 @@ mod scheduler;
 #[tokio::main]
 async fn main() {
     println!("This is very WIP.");
-
-    // tokio::spawn(async move {
-    //     println!("Starting!");
-    // });
     test().await
 }
 

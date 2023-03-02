@@ -28,7 +28,7 @@ impl Glicko2 {
         self,
         phi_star: f64,
         v: f64,
-        g_opponents: &Vec<&Glicko2>,
+        g_opponents: &[&Glicko2],
         scores: &Vec<f64>,
         sigma_prime: f64,
     ) -> Glicko2 {
@@ -44,7 +44,7 @@ impl Glicko2 {
     pub fn process_matches(self, g_opponents: &Vec<&Glicko2>, scores: &Vec<f64>) -> Glicko2 {
         assert_eq!(g_opponents.len(), scores.len());
 
-        let delta = compute_delta(&self, &g_opponents, scores);
+        let delta = compute_delta(&self, g_opponents, scores);
         let v = compute_v(&self, g_opponents);
         let sigma_prime = sigma_by_illinois(&self, delta, v);
         let phi_star = get_new_rating_dev(&self, sigma_prime);
@@ -70,7 +70,7 @@ fn g(phi: f64) -> f64 {
     1.0 / (1.0 + 3.0 * phi.powi(2) / std::f64::consts::PI.powi(2)).sqrt()
 }
 
-fn compute_v(g_cur: &Glicko2, g_opponents: &Vec<&Glicko2>) -> f64 {
+fn compute_v(g_cur: &Glicko2, g_opponents: &[&Glicko2]) -> f64 {
     let sum: f64 = g_opponents
         .iter()
         .map(|g_op| {
@@ -82,7 +82,7 @@ fn compute_v(g_cur: &Glicko2, g_opponents: &Vec<&Glicko2>) -> f64 {
     1f64 / sum
 }
 
-fn compute_delta(g_cur: &Glicko2, g_opponents: &Vec<&Glicko2>, scores: &Vec<f64>) -> f64 {
+fn compute_delta(g_cur: &Glicko2, g_opponents: &[&Glicko2], scores: &Vec<f64>) -> f64 {
     let mut sum = 0f64;
     assert_eq!(g_opponents.len(), scores.len());
 

@@ -64,10 +64,10 @@ pub enum MatchWinner {
 
 #[derive(Copy, Clone, PartialEq, Debug)]
 pub enum States {
-    NONE,
-    INIT,
-    CONTINUOUS,
-    END,
+    None,
+    Init,
+    Continuous,
+    End,
 }
 
 pub struct SchedulerState {
@@ -106,7 +106,7 @@ impl Judge {
 
 impl SchedulerState {
     pub fn new() -> SchedulerState {
-        let current_state = Arc::from(RwLock::from(States::NONE));
+        let current_state = Arc::from(RwLock::from(States::None));
         let judges = Arc::from(RwLock::from(vec![]));
         let items = Arc::from(RwLock::from(vec![]));
         let matches = Arc::from(RwLock::from(HashMap::new()));
@@ -127,17 +127,17 @@ impl SchedulerState {
     }
 
     pub fn get_judges(&self) -> Arc<RwLock<Vec<Judge>>> {
-        let ptr = self.judges.clone();
-        ptr
+        
+        self.judges.clone()
     }
 
     pub fn get_matches(&self) -> Arc<RwLock<HashMap<String, Arc<RwLock<MatchPair>>>>> {
-        let ptr = self.matches.clone();
-        ptr
+        
+        self.matches.clone()
     }
 
     pub fn seed_start(&self, n: usize) -> bool {
-        if self.get_state() != States::NONE {
+        if self.get_state() != States::None {
             return false;
         }
 
@@ -158,9 +158,9 @@ impl SchedulerState {
 
         let state_binding = self.current_state.clone();
         let mut old_state = state_binding.write().unwrap();
-        *old_state = States::INIT;
+        *old_state = States::Init;
 
-        return true;
+        true
     }
 
     pub fn add_items(&self, new_items: &mut Vec<Item>) {
@@ -176,10 +176,10 @@ impl SchedulerState {
     fn find_next_match(&self) -> Result<Arc<RwLock<MatchPair>>, SchedulerError> {
         let state = self.get_state();
         match state {
-            States::NONE => Err(SchedulerError::new(
+            States::None => Err(SchedulerError::new(
                 "Cannot get next match while in NONE state",
             )),
-            States::INIT => {
+            States::Init => {
                 let q = self.mq.write().unwrap();
                 let hm = self.get_matches();
                 let matches = hm.write().unwrap();
@@ -194,8 +194,8 @@ impl SchedulerState {
                     Err(SchedulerError::new("Could not peek queue"))
                 }
             }
-            States::CONTINUOUS => todo!(),
-            States::END => Err(SchedulerError::new(
+            States::Continuous => todo!(),
+            States::End => Err(SchedulerError::new(
                 "Cannot get next match while in END state",
             )),
         }
@@ -292,7 +292,7 @@ mod tests {
             assert!(result);
         });
         handle.join().unwrap();
-        assert_eq!(scheduler_state.get_state(), States::INIT);
+        assert_eq!(scheduler_state.get_state(), States::Init);
     }
 
     #[test]
@@ -323,7 +323,7 @@ mod tests {
         let matches = scheduler_state.matches.read().unwrap();
 
         assert_eq!(matches.len(), 10);
-        assert_eq!(result, true);
+        assert!(result);
     }
 
     #[test]

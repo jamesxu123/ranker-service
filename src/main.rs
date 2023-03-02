@@ -14,7 +14,6 @@ async fn main() {
     //     println!("Starting!");
     // });
     test().await
-
 }
 
 async fn test() {
@@ -50,7 +49,6 @@ async fn test() {
     let matches = scheduler_state.get_matches();
     println!("Result {:#?}", matches.read().unwrap());
 
-
     let j1 = Judge::new("J1".to_owned());
     let mut jv = vec![j1];
     scheduler_state.add_judges(&mut jv);
@@ -58,6 +56,8 @@ async fn test() {
     let binding = scheduler_state.get_judges();
     let v = binding.read().unwrap();
 
-    let next_match = scheduler_state.give_judge_next_match(v.get(0).unwrap()).unwrap();
+    let next_match = scheduler_state
+        .give_judge_next_match(v.get(0).unwrap())
+        .unwrap();
     println!("{:#?}", next_match);
 }

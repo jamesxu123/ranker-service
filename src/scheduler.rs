@@ -195,7 +195,7 @@ impl SchedulerState {
                         } else {
                             Err(SchedulerError::new("Could not peek queue"))
                         }
-                    },
+                    }
                     Err(_) => Err(SchedulerError::new("Lock failed (poisoned)")),
                 }
             }
@@ -206,7 +206,10 @@ impl SchedulerState {
         }
     }
 
-    pub fn give_judge_next_match(&self, judge: &Judge) -> Result<Arc<RwLock<MatchPair>>, SchedulerError> {
+    pub fn give_judge_next_match(
+        &self,
+        judge: &Judge,
+    ) -> Result<Arc<RwLock<MatchPair>>, SchedulerError> {
         let nm = self.find_next_match();
         match nm {
             Ok(m_lock) => {
@@ -219,11 +222,11 @@ impl SchedulerState {
                         m.judge_id = Some(judge.id.clone());
                         m.visited += 1;
                         Ok(m_lock.clone())
-                    },
-                    Err(_) => Err(SchedulerError::new("huh Lock failed (poisoned)"))
+                    }
+                    Err(_) => Err(SchedulerError::new("huh Lock failed (poisoned)")),
                 }
-            },
-            Err(e) => Err(e)
+            }
+            Err(e) => Err(e),
         }
     }
 }
@@ -259,14 +262,13 @@ mod tests {
 
         let binding = scheduler_state.get_judges();
         let v = binding.read().unwrap();
-    
+
         let actual_j = v.get(0).unwrap();
         let next_match = scheduler_state.give_judge_next_match(actual_j).unwrap();
         let mp = next_match.read().unwrap();
 
         let id1 = mp.judge_id.clone();
         assert_eq!(id1, Some(actual_j.id.clone()))
-
     }
 
     #[test]

@@ -8,6 +8,8 @@ use std::{
     vec,
 };
 
+use crate::glicko2::algo::Glicko2;
+
 #[derive(Debug)]
 pub struct SchedulerError {
     details: String,
@@ -38,18 +40,20 @@ pub struct Item {
     pub name: String,
     pub location: String,
     pub description: String,
+    pub score: Box<Glicko2>,
 }
 
 #[derive(Debug, Clone)]
 pub struct MatchPair {
-    match_pair_id: String,
-    i1: Item,
-    i2: Item,
+    pub match_pair_id: String,
+    pub i1: Box<Item>,
+    pub i2: Box<Item>,
     visited: i32,
-    winner: MatchWinner,
+    winner: Option<MatchWinner>,
     judge_id: Option<String>,
 }
 
+#[derive(Clone, PartialEq, Debug)]
 pub struct Judge {
     id: String,
     name: String,
@@ -59,7 +63,6 @@ pub struct Judge {
 pub enum MatchWinner {
     A,
     B,
-    NA,
 }
 
 #[derive(Copy, Clone, PartialEq, Debug)]
@@ -92,10 +95,10 @@ fn create_initial_matches(competitors: &[Item], n: usize) -> Vec<MatchPair> {
             let c2 = *cc.get(cc.len() - 1 - i).unwrap();
             matches.push(MatchPair {
                 match_pair_id: uuid::Uuid::new_v4().to_string(),
-                i1: c1.clone(),
-                i2: c2.clone(),
+                i1: Box::new(c1.clone()),
+                i2: Box::new(c2.clone()),
                 visited: 0,
-                winner: MatchWinner::NA,
+                winner: None,
                 judge_id: None,
             });
         }
@@ -109,6 +112,10 @@ impl Judge {
             id: uuid::Uuid::new_v4().to_string(),
             name,
         }
+    }
+
+    pub fn log_match_action(&self) {
+        println!("match logged");
     }
 }
 
@@ -128,14 +135,60 @@ impl SchedulerState {
         }
     }
 
+    pub fn judge_match(&self, judge: &Judge, match_id: &str, winner: MatchWinner) -> bool {
+        let m = self.matches.write();
+        let matches = m.unwrap();
+
+        if let Some(match_pair_guard) = matches.get(match_id) {
+            if let Ok(mut match_pair) = match_pair_guard.write() {
+                match_pair.winner = Some(winner);
+
+                judge.log_match_action();
+                return match winner {
+                    MatchWinner::A => {
+                        let s1_im = match_pair.i1.score.clone();
+                        let s2_im = match_pair.i2.score.clone();
+
+                        match_pair.i1.score.process_matches(&vec![&s2_im], &vec![1f64]);
+                        match_pair.i2.score.process_matches(&vec![&s1_im], &vec![0f64]);
+                        true
+                    }
+                    MatchWinner::B => {
+                        let s1_im = match_pair.i1.score.clone();
+                        let s2_im = match_pair.i2.score.clone();
+
+                        match_pair.i1.score.process_matches(&vec![&s2_im], &vec![0f64]);
+                        match_pair.i2.score.process_matches(&vec![&s1_im], &vec![1f64]);
+                        true
+                    }
+                };
+            }
+        }
+        false
+    }
+
     pub fn get_state(&self) -> States {
         let guard = self.current_state.clone();
         let state = guard.read().unwrap();
         *state
     }
 
-    pub fn get_judges(&self) -> Arc<RwLock<Vec<Judge>>> {
-        self.judges.clone()
+    pub fn get_judges(&self) -> Vec<Judge> {
+        let iter = self.judges.read().unwrap();
+        let mut v: Vec<Judge> = vec![];
+        for i in iter.iter() {
+            v.push(i.clone());
+        }
+        v
+    }
+
+    pub fn get_items(&self) -> Vec<Item> {
+        let iter = self.items.read().unwrap();
+        let mut v: Vec<Item> = vec![];
+        for i in iter.iter() {
+            v.push(i.clone());
+        }
+        v
     }
 
     fn state_machine_internal_transition(&self) -> States {
@@ -257,10 +310,10 @@ impl SchedulerState {
         let id = uuid::Uuid::new_v4().to_string();
         let m = MatchPair {
             match_pair_id: id.clone(),
-            i1: choices[0].clone(),
-            i2: choices[1].clone(),
+            i1: Box::new(choices[0].clone()),
+            i2: Box::new(choices[1].clone()),
             visited: 0,
-            winner: MatchWinner::NA,
+            winner: None,
             judge_id: None,
         };
 
@@ -305,6 +358,7 @@ mod tests {
             name: "Project 1".to_owned(),
             location: "a1".to_owned(),
             description: "cool project".to_owned(),
+            score: Box::new(Glicko2::new()),
         };
 
         let cc1 = c1.clone();
@@ -313,6 +367,7 @@ mod tests {
             name: "Project 2".to_owned(),
             location: "a1".to_owned(),
             description: "cool project".to_owned(),
+            score: Box::new(Glicko2::new()),
         };
 
         let cc2 = c2.clone();
@@ -324,12 +379,12 @@ mod tests {
         let next_match = scheduler_state.get_continuous_stage().unwrap();
         let read = next_match.read().unwrap();
 
-        if read.i1 != cc1 {
-            assert_eq!(read.i1, cc2);
-            assert_eq!(read.i2, cc1);
+        if *read.i1 != cc1 {
+            assert_eq!(*read.i1, cc2);
+            assert_eq!(*read.i2, cc1);
         } else {
-            assert_eq!(read.i1, cc1);
-            assert_eq!(read.i2, cc2);
+            assert_eq!(*read.i1, cc1);
+            assert_eq!(*read.i2, cc2);
         }
     }
 
@@ -339,12 +394,14 @@ mod tests {
             name: "Project 1".to_owned(),
             location: "a1".to_owned(),
             description: "cool project".to_owned(),
+            score: Box::new(Glicko2::new()),
         };
 
         let c2 = Item {
             name: "Project 2".to_owned(),
             location: "a1".to_owned(),
             description: "cool project".to_owned(),
+            score: Box::new(Glicko2::new()),
         };
 
         let mut arr = vec![c1, c2];
@@ -356,8 +413,7 @@ mod tests {
         let mut jv = vec![j1];
         scheduler_state.add_judges(&mut jv);
 
-        let binding = scheduler_state.get_judges();
-        let v = binding.read().unwrap();
+        let v = scheduler_state.get_judges();
 
         let actual_j = v.get(0).unwrap();
         let next_match = scheduler_state.give_judge_next_match(actual_j).unwrap();
@@ -368,23 +424,65 @@ mod tests {
     }
 
     #[test]
-    fn test_seed_start_thread() {
+    fn test_judge_match() {
         let c1 = Item {
             name: "Project 1".to_owned(),
             location: "a1".to_owned(),
             description: "cool project".to_owned(),
+            score: Box::new(Glicko2::new()),
         };
 
         let c2 = Item {
             name: "Project 2".to_owned(),
             location: "a1".to_owned(),
             description: "cool project".to_owned(),
+            score: Box::new(Glicko2::new()),
+        };
+
+        let mut arr = vec![c1, c2];
+        let scheduler_state = Arc::from(SchedulerState::new());
+        scheduler_state.add_items(&mut arr);
+        scheduler_state.seed_start(1);
+
+        let j1 = Judge::new("J1".to_owned());
+        let j = j1.clone();
+        let mut jv = vec![j1];
+        scheduler_state.add_judges(&mut jv);
+
+        let match_id = {
+            let next_match = scheduler_state.give_judge_next_match(&j).unwrap();
+            let x = next_match.read().unwrap().match_pair_id.clone();
+            x
+        };
+        scheduler_state.judge_match(&j, &match_id, MatchWinner::A);
+
+        let mut items = scheduler_state.get_items();
+        items.sort_by(|a, b| a.score.mu.total_cmp(&b.score.mu));
+
+        println!("{:#?}", items);
+    }
+
+    #[test]
+    fn test_seed_start_thread() {
+        let c1 = Item {
+            name: "Project 1".to_owned(),
+            location: "a1".to_owned(),
+            description: "cool project".to_owned(),
+            score: Box::new(Glicko2::new()),
+        };
+
+        let c2 = Item {
+            name: "Project 2".to_owned(),
+            location: "a1".to_owned(),
+            description: "cool project".to_owned(),
+            score: Box::new(Glicko2::new()),
         };
 
         let c3 = Item {
             name: "Project 3".to_owned(),
             location: "a1".to_owned(),
             description: "cool project".to_owned(),
+            score: Box::new(Glicko2::new()),
         };
 
         let mut arr = vec![c1, c2, c3];
@@ -407,18 +505,21 @@ mod tests {
             name: "Project 1".to_owned(),
             location: "a1".to_owned(),
             description: "cool project".to_owned(),
+            score: Box::new(Glicko2::new()),
         };
 
         let c2 = Item {
             name: "Project 2".to_owned(),
             location: "a1".to_owned(),
             description: "cool project".to_owned(),
+            score: Box::new(Glicko2::new()),
         };
 
         let c3 = Item {
             name: "Project 3".to_owned(),
             location: "a1".to_owned(),
             description: "cool project".to_owned(),
+            score: Box::new(Glicko2::new()),
         };
 
         let mut arr = vec![c1, c2, c3];
@@ -438,18 +539,21 @@ mod tests {
             name: "Project 1".to_owned(),
             location: "a1".to_owned(),
             description: "cool project".to_owned(),
+            score: Box::new(Glicko2::new()),
         };
 
         let c2 = Item {
             name: "Project 2".to_owned(),
             location: "a1".to_owned(),
             description: "cool project".to_owned(),
+            score: Box::new(Glicko2::new()),
         };
 
         let c3 = Item {
             name: "Project 3".to_owned(),
             location: "a1".to_owned(),
             description: "cool project".to_owned(),
+            score: Box::new(Glicko2::new()),
         };
 
         let mut arr = vec![c1, c2, c3];
@@ -467,18 +571,21 @@ mod tests {
             name: "Project 1".to_owned(),
             location: "a1".to_owned(),
             description: "cool project".to_owned(),
+            score: Box::new(Glicko2::new()),
         };
 
         let c2 = Item {
             name: "Project 2".to_owned(),
             location: "a1".to_owned(),
             description: "cool project".to_owned(),
+            score: Box::new(Glicko2::new()),
         };
 
         let c3 = Item {
             name: "Project 3".to_owned(),
             location: "a1".to_owned(),
             description: "cool project".to_owned(),
+            score: Box::new(Glicko2::new()),
         };
 
         let arr = vec![c1, c2, c3];
@@ -498,8 +605,7 @@ mod tests {
         let mut jv = vec![j1, j2, j3];
         scheduler_state.add_judges(&mut jv);
 
-        let binding = scheduler_state.get_judges();
-        let judges = binding.read().unwrap();
+        let judges = scheduler_state.get_judges();
         assert_eq!(judges.len(), 3);
     }
 }

@@ -8,7 +8,7 @@ pub struct Glicko1 {
     pub rd: f64,
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug, PartialEq)]
 pub struct Glicko2 {
     pub mu: f64,
     pub sigma: f64,
@@ -24,31 +24,47 @@ impl Glicko2 {
         }
     }
 
+    pub fn from_glicko1_vars(rating: f64, sigma: f64, rd: f64) -> Self {
+        Glicko2 {
+            mu: (rating - 1500.0) / FACTOR,
+            sigma,
+            phi: rd / FACTOR,
+        }
+    }
+
+    pub fn new() -> Self {
+        Self::from_glicko1_vars(1500f64, 0.06, 350f64)
+    }
+
     fn update_glicko2_vars(
-        self,
+        &mut self,
         phi_star: f64,
         v: f64,
         g_opponents: &[&Glicko2],
         scores: &Vec<f64>,
         sigma_prime: f64,
-    ) -> Glicko2 {
+    ) {
         let phi = 1f64 / (1f64 / phi_star.powi(2) + 1f64 / v).sqrt();
-        let mu = self.mu + phi.powi(2) * compute_delta(&self, g_opponents, scores);
-        Glicko2 {
-            mu,
-            sigma: sigma_prime,
-            phi,
-        }
+        let mu = self.mu + phi.powi(2) * compute_delta(self, g_opponents, scores);
+
+        self.mu = mu;
+        self.sigma = sigma_prime;
+        self.phi = phi;
+        // self = Glicko2 {
+        //     mu,
+        //     sigma: sigma_prime,
+        //     phi,
+        // }
     }
 
-    pub fn process_matches(self, g_opponents: &Vec<&Glicko2>, scores: &Vec<f64>) -> Glicko2 {
+    pub fn process_matches(&mut self, g_opponents: &Vec<&Glicko2>, scores: &Vec<f64>) {
         assert_eq!(g_opponents.len(), scores.len());
 
-        let delta = compute_delta(&self, g_opponents, scores);
-        let v = compute_v(&self, g_opponents);
-        let sigma_prime = sigma_by_illinois(&self, delta, v);
-        let phi_star = get_new_rating_dev(&self, sigma_prime);
-        self.update_glicko2_vars(phi_star, v, g_opponents, scores, sigma_prime)
+        let delta = compute_delta(self, g_opponents, scores);
+        let v = compute_v(self, g_opponents);
+        let sigma_prime = sigma_by_illinois(self, delta, v);
+        let phi_star = get_new_rating_dev(self, sigma_prime);
+        self.update_glicko2_vars(phi_star, v, g_opponents, scores, sigma_prime);
     }
 }
 
@@ -146,7 +162,7 @@ mod tests {
 
     #[test]
     fn test_example_all() {
-        let p1 = Glicko2::from_glicko1(&Glicko1 {
+        let mut p1 = Glicko2::from_glicko1(&Glicko1 {
             rating: 1500f64,
             sigma: 0.06f64,
             rd: 200f64,
@@ -173,8 +189,8 @@ mod tests {
         let scores: Vec<f64> = vec![1f64, 0f64, 0f64];
         let opps = vec![&o1, &o2, &o3];
 
-        let pf = p1.process_matches(&opps, &scores);
-        let as_g1 = Glicko1::from_glicko2(&pf);
+        p1.process_matches(&opps, &scores);
+        let as_g1 = Glicko1::from_glicko2(&p1);
 
         // println!("{:.2}, {:.2},{:.2}", as_g1.rating, as_g1.sigma, as_g1.rd);
         assert!((as_g1.rating - 1436.05).abs() < 0.01);

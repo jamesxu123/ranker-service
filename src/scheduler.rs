@@ -40,7 +40,7 @@ pub struct Item {
     pub name: String,
     pub location: String,
     pub description: String,
-    pub score: Box<Glicko2>,
+    pub score: Box<Glicko2>, // TODO: refactor this into a BTreeMap
 }
 
 #[derive(Debug, Clone)]
@@ -144,6 +144,7 @@ impl SchedulerState {
                 match_pair.winner = Some(winner);
 
                 judge.log_match_action();
+                // TODO: does not actually update backing items array...I don't have a good solution here
                 return match winner {
                     MatchWinner::A => {
                         let s1_im = match_pair.i1.score.clone();

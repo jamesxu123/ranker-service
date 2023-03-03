@@ -64,7 +64,7 @@ pub enum MatchWinner {
 
 #[derive(Copy, Clone, PartialEq, Debug)]
 pub enum States {
-    None,
+    NoState,
     Init,
     Continuous,
     End,
@@ -82,15 +82,23 @@ fn create_initial_matches(competitors: &[Item], n: usize) -> Vec<MatchPair> {
     let mut matches: Vec<MatchPair> = vec![];
     let rng = &mut rand::thread_rng();
     for _ in 0..n {
-        let choices: Vec<Item> = competitors.choose_multiple(rng, 2).cloned().collect();
-        matches.push(MatchPair {
-            match_pair_id: uuid::Uuid::new_v4().to_string(),
-            i1: choices[0].clone(),
-            i2: choices[1].clone(),
-            visited: 0,
-            winner: MatchWinner::NA,
-            judge_id: None,
-        });
+        let mut cc: Vec<&Item> = Vec::from_iter(competitors.iter());
+        cc.shuffle(rng);
+        if cc.len() % 2 != 0 {
+            cc.push(cc.get(0).unwrap());
+        }
+        for i in 0..cc.len() / 2 {
+            let c1 = *cc.get(i).unwrap();
+            let c2 = *cc.get(cc.len() - 1 - i).unwrap();
+            matches.push(MatchPair {
+                match_pair_id: uuid::Uuid::new_v4().to_string(),
+                i1: c1.clone(),
+                i2: c2.clone(),
+                visited: 0,
+                winner: MatchWinner::NA,
+                judge_id: None,
+            });
+        }
     }
     matches
 }
@@ -106,7 +114,7 @@ impl Judge {
 
 impl SchedulerState {
     pub fn new() -> SchedulerState {
-        let current_state = Arc::from(RwLock::from(States::None));
+        let current_state = Arc::from(RwLock::from(States::NoState));
         let judges = Arc::from(RwLock::from(vec![]));
         let items = Arc::from(RwLock::from(vec![]));
         let matches = Arc::from(RwLock::from(HashMap::new()));
@@ -130,12 +138,38 @@ impl SchedulerState {
         self.judges.clone()
     }
 
+    fn state_machine_internal_transition(&self) -> States {
+        let guard = self.current_state.clone();
+        let mut state = guard.write().unwrap();
+
+        match *state {
+            States::NoState => States::NoState,
+            States::Init => {
+                let q = self.mq.read().unwrap();
+                let peek = q.peek_min();
+                if let Some(p) = peek {
+                    if *p.1 < 1 {
+                        *state = States::Init;
+                        return States::Init;
+                    }
+                    *state = States::Continuous;
+                    States::Continuous
+                } else {
+                    *state = States::Init;
+                    States::Init
+                }
+            }
+            States::Continuous => States::Continuous,
+            States::End => States::End,
+        }
+    }
+
     pub fn get_matches(&self) -> Arc<RwLock<HashMap<String, Arc<RwLock<MatchPair>>>>> {
         self.matches.clone()
     }
 
     pub fn seed_start(&self, n: usize) -> bool {
-        if self.get_state() != States::None {
+        if self.get_state() != States::NoState {
             return false;
         }
 
@@ -174,7 +208,7 @@ impl SchedulerState {
     fn find_next_match(&self) -> Result<Arc<RwLock<MatchPair>>, SchedulerError> {
         let state = self.get_state();
         match state {
-            States::None => Err(SchedulerError::new(
+            States::NoState => Err(SchedulerError::new(
                 "Cannot get next match while in NONE state",
             )),
             States::Init => self.get_from_queue(0).unwrap(),
@@ -216,7 +250,10 @@ impl SchedulerState {
         let rng = &mut rand::thread_rng();
         let items_guard = self.items.read();
         let items = items_guard.unwrap();
+
         let choices: Vec<Item> = items.choose_multiple(rng, 2).cloned().collect();
+        // TODO: keep a sorted array of closest scores and then select best match
+
         let id = uuid::Uuid::new_v4().to_string();
         let m = MatchPair {
             match_pair_id: id.clone(),
@@ -239,6 +276,7 @@ impl SchedulerState {
         &self,
         judge: &Judge,
     ) -> Result<Arc<RwLock<MatchPair>>, SchedulerError> {
+        self.state_machine_internal_transition();
         let nm = self.find_next_match();
         match nm {
             Ok(m_lock) => {
@@ -387,10 +425,10 @@ mod tests {
 
         let scheduler_state = SchedulerState::new();
         scheduler_state.add_items(&mut arr);
-        let result = scheduler_state.seed_start(10);
+        let result = scheduler_state.seed_start(3);
         let matches = scheduler_state.matches.read().unwrap();
 
-        assert_eq!(matches.len(), 10);
+        assert_eq!(matches.len(), 6);
         assert!(result);
     }
 
@@ -445,9 +483,9 @@ mod tests {
 
         let arr = vec![c1, c2, c3];
 
-        let matches = create_initial_matches(&arr, 5);
+        let matches = create_initial_matches(&arr, 3);
 
-        assert_eq!(matches.len(), 5);
+        assert_eq!(matches.len(), 6);
     }
 
     #[test]

@@ -33,7 +33,7 @@ impl Error for SchedulerError {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Item {
     pub name: String,
     pub location: String,
@@ -127,12 +127,10 @@ impl SchedulerState {
     }
 
     pub fn get_judges(&self) -> Arc<RwLock<Vec<Judge>>> {
-        
         self.judges.clone()
     }
 
     pub fn get_matches(&self) -> Arc<RwLock<HashMap<String, Arc<RwLock<MatchPair>>>>> {
-        
         self.matches.clone()
     }
 
@@ -179,26 +177,62 @@ impl SchedulerState {
             States::None => Err(SchedulerError::new(
                 "Cannot get next match while in NONE state",
             )),
-            States::Init => {
-                let q = self.mq.write().unwrap();
-                let hm = self.get_matches();
-                let matches = hm.write().unwrap();
-                if let Some(best) = q.peek_min() {
-                    let key = best.0;
-                    if let Some(val) = matches.get(key) {
-                        Ok(val.clone())
-                    } else {
-                        Err(SchedulerError::new("Match key not found"))
-                    }
-                } else {
-                    Err(SchedulerError::new("Could not peek queue"))
-                }
-            }
-            States::Continuous => todo!(),
+            States::Init => self.get_from_queue(0).unwrap(),
+            States::Continuous => self.get_continuous_stage(),
             States::End => Err(SchedulerError::new(
                 "Cannot get next match while in END state",
             )),
         }
+    }
+
+    fn get_from_queue(
+        &self,
+        min_prio: i32,
+    ) -> Option<Result<Arc<RwLock<MatchPair>>, SchedulerError>> {
+        let q = self.mq.write().unwrap();
+        let hm = self.get_matches();
+        let matches = hm.write().unwrap();
+        if let Some(best) = q.peek_min() {
+            let key = best.0;
+            let prio = *best.1;
+            if min_prio < prio {
+                return None;
+            }
+            if let Some(val) = matches.get(key) {
+                Some(Ok(val.clone()))
+            } else {
+                Some(Err(SchedulerError::new("Match key not found")))
+            }
+        } else {
+            Some(Err(SchedulerError::new("Could not peek queue")))
+        }
+    }
+
+    fn get_continuous_stage(&self) -> Result<Arc<RwLock<MatchPair>>, SchedulerError> {
+        if let Some(Ok(queue_item)) = self.get_from_queue(1) {
+            return Ok(queue_item);
+        }
+
+        let rng = &mut rand::thread_rng();
+        let items_guard = self.items.read();
+        let items = items_guard.unwrap();
+        let choices: Vec<Item> = items.choose_multiple(rng, 2).cloned().collect();
+        let id = uuid::Uuid::new_v4().to_string();
+        let m = MatchPair {
+            match_pair_id: id.clone(),
+            i1: choices[0].clone(),
+            i2: choices[1].clone(),
+            visited: 0,
+            winner: MatchWinner::NA,
+            judge_id: None,
+        };
+
+        let as_arc = Arc::from(RwLock::from(m));
+
+        let hm_binding = self.get_matches();
+        let mut hm = hm_binding.write().unwrap();
+        hm.insert(id, as_arc.clone());
+        Ok(as_arc)
     }
 
     pub fn give_judge_next_match(
@@ -226,6 +260,40 @@ mod tests {
     use std::thread;
 
     use super::*;
+
+    #[test]
+    fn test_get_continuous_stage() {
+        let c1 = Item {
+            name: "Project 1".to_owned(),
+            location: "a1".to_owned(),
+            description: "cool project".to_owned(),
+        };
+
+        let cc1 = c1.clone();
+
+        let c2 = Item {
+            name: "Project 2".to_owned(),
+            location: "a1".to_owned(),
+            description: "cool project".to_owned(),
+        };
+
+        let cc2 = c2.clone();
+
+        let mut arr = vec![c1, c2];
+        let scheduler_state = Arc::from(SchedulerState::new());
+        scheduler_state.add_items(&mut arr);
+
+        let next_match = scheduler_state.get_continuous_stage().unwrap();
+        let read = next_match.read().unwrap();
+
+        if read.i1 != cc1 {
+            assert_eq!(read.i1, cc2);
+            assert_eq!(read.i2, cc1);
+        } else {
+            assert_eq!(read.i1, cc1);
+            assert_eq!(read.i2, cc2);
+        }
+    }
 
     #[test]
     fn test_give_judge_next_match() {

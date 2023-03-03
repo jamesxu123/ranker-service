@@ -1,3 +1,4 @@
+use dashmap::DashMap;
 use priority_queue::DoublePriorityQueue;
 use rand::seq::SliceRandom;
 use std::{
@@ -37,18 +38,19 @@ impl Error for SchedulerError {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Item {
+    pub id: String,
     pub name: String,
     pub location: String,
     pub description: String,
-    pub score: Box<Glicko2>, // TODO: refactor this into a BTreeMap
+    pub score: Box<Glicko2>,
 }
 
 #[derive(Debug, Clone)]
 pub struct MatchPair {
     pub match_pair_id: String,
-    pub i1: Box<Item>,
-    pub i2: Box<Item>,
-    visited: i32,
+    pub i1: String,
+    pub i2: String,
+    visit_count: i32,
     winner: Option<MatchWinner>,
     judge_id: Option<String>,
 }
@@ -76,16 +78,16 @@ pub enum States {
 pub struct SchedulerState {
     current_state: Arc<RwLock<States>>,
     judges: Arc<RwLock<Vec<Judge>>>,
-    items: Arc<RwLock<Vec<Item>>>,
+    items: Arc<DashMap<String, Box<Item>>>,
     matches: Arc<RwLock<HashMap<String, Arc<RwLock<MatchPair>>>>>,
     mq: Arc<RwLock<DoublePriorityQueue<String, i32>>>,
 }
 
-fn create_initial_matches(competitors: &[Item], n: usize) -> Vec<MatchPair> {
+fn create_initial_matches(competitors: &[Box<Item>], n: usize) -> Vec<MatchPair> {
     let mut matches: Vec<MatchPair> = vec![];
     let rng = &mut rand::thread_rng();
     for _ in 0..n {
-        let mut cc: Vec<&Item> = Vec::from_iter(competitors.iter());
+        let mut cc: Vec<&Box<Item>> = Vec::from_iter(competitors.iter());
         cc.shuffle(rng);
         if cc.len() % 2 != 0 {
             cc.push(cc.get(0).unwrap());
@@ -95,9 +97,9 @@ fn create_initial_matches(competitors: &[Item], n: usize) -> Vec<MatchPair> {
             let c2 = *cc.get(cc.len() - 1 - i).unwrap();
             matches.push(MatchPair {
                 match_pair_id: uuid::Uuid::new_v4().to_string(),
-                i1: Box::new(c1.clone()),
-                i2: Box::new(c2.clone()),
-                visited: 0,
+                i1: c1.id.clone(),
+                i2: c2.id.clone(),
+                visit_count: 0,
                 winner: None,
                 judge_id: None,
             });
@@ -123,7 +125,7 @@ impl SchedulerState {
     pub fn new() -> SchedulerState {
         let current_state = Arc::from(RwLock::from(States::NoState));
         let judges = Arc::from(RwLock::from(vec![]));
-        let items = Arc::from(RwLock::from(vec![]));
+        let items = Arc::from(DashMap::new());
         let matches = Arc::from(RwLock::from(HashMap::new()));
         let mq = Arc::from(RwLock::from(DoublePriorityQueue::new()));
         SchedulerState {
@@ -144,22 +146,26 @@ impl SchedulerState {
                 match_pair.winner = Some(winner);
 
                 judge.log_match_action();
+                
+                // TODO: this unwrap is _probably_ a bad idea
+                let mut s1 = self.items.get_mut(&match_pair.i1).unwrap();
+                let mut s2 = self.items.get_mut(&match_pair.i2).unwrap();
                 // TODO: does not actually update backing items array...I don't have a good solution here
                 return match winner {
                     MatchWinner::A => {
-                        let s1_im = match_pair.i1.score.clone();
-                        let s2_im = match_pair.i2.score.clone();
+                        let s1_im = s1.score.clone();
+                        let s2_im = s2.score.clone();
 
-                        match_pair.i1.score.process_matches(&vec![&s2_im], &vec![1f64]);
-                        match_pair.i2.score.process_matches(&vec![&s1_im], &vec![0f64]);
+                        s1.score.process_matches(&vec![&s2_im], &vec![1f64]);
+                        s2.score.process_matches(&vec![&s1_im], &vec![0f64]);
                         true
                     }
                     MatchWinner::B => {
-                        let s1_im = match_pair.i1.score.clone();
-                        let s2_im = match_pair.i2.score.clone();
+                        let s1_im = s1.score.clone();
+                        let s2_im = s2.score.clone();
 
-                        match_pair.i1.score.process_matches(&vec![&s2_im], &vec![0f64]);
-                        match_pair.i2.score.process_matches(&vec![&s1_im], &vec![1f64]);
+                        s1.score.process_matches(&vec![&s2_im], &vec![0f64]);
+                        s2.score.process_matches(&vec![&s1_im], &vec![1f64]);
                         true
                     }
                 };
@@ -183,11 +189,11 @@ impl SchedulerState {
         v
     }
 
-    pub fn get_items(&self) -> Vec<Item> {
-        let iter = self.items.read().unwrap();
-        let mut v: Vec<Item> = vec![];
+    pub fn get_items(&self) -> Vec<Box<Item>> {
+        let iter = &self.items;
+        let mut v: Vec<Box<Item>> = vec![];
         for i in iter.iter() {
-            v.push(i.clone());
+            v.push(i.value().clone());
         }
         v
     }
@@ -227,18 +233,17 @@ impl SchedulerState {
             return false;
         }
 
-        let binding = self.items.clone();
-        let items = binding.read().unwrap();
-
         let matches_binding = self.matches.clone();
         let mut matches = matches_binding.write().unwrap();
 
         let pq_binding = self.mq.clone();
         let mut pq = pq_binding.write().unwrap();
 
-        let mut starter_matches = create_initial_matches(&items, n);
+        let item_vec = self.get_items();
+
+        let mut starter_matches = create_initial_matches(&item_vec, n);
         for m in starter_matches.drain(..) {
-            pq.push(m.match_pair_id.clone(), m.visited);
+            pq.push(m.match_pair_id.clone(), m.visit_count);
             matches.insert(m.match_pair_id.clone(), Arc::from(RwLock::from(m)));
         }
 
@@ -249,9 +254,11 @@ impl SchedulerState {
         true
     }
 
-    pub fn add_items(&self, new_items: &mut Vec<Item>) {
-        let mut items = self.items.write().unwrap();
-        items.append(new_items);
+    pub fn add_items(&self, new_items: &mut Vec<Box<Item>>) {
+        let items = &self.items;
+        for item in new_items.into_iter() {
+            items.insert(item.id.clone(), item.clone());
+        }
     }
 
     pub fn add_judges(&self, new_judges: &mut Vec<Judge>) {
@@ -302,18 +309,17 @@ impl SchedulerState {
         }
 
         let rng = &mut rand::thread_rng();
-        let items_guard = self.items.read();
-        let items = items_guard.unwrap();
+        let items = self.get_items();
 
-        let choices: Vec<Item> = items.choose_multiple(rng, 2).cloned().collect();
+        let choices: Vec<Box<Item>> = items.choose_multiple(rng, 2).cloned().collect();
         // TODO: keep a sorted array of closest scores and then select best match
 
         let id = uuid::Uuid::new_v4().to_string();
         let m = MatchPair {
             match_pair_id: id.clone(),
-            i1: Box::new(choices[0].clone()),
-            i2: Box::new(choices[1].clone()),
-            visited: 0,
+            i1: choices[0].id.clone(),
+            i2: choices[1].id.clone(),
+            visit_count: 0,
             winner: None,
             judge_id: None,
         };
@@ -339,7 +345,7 @@ impl SchedulerState {
                 let mut q = self.mq.write().unwrap();
                 q.change_priority_by(m_id, |i| *i += 1);
                 m.judge_id = Some(judge.id.clone());
-                m.visited += 1;
+                m.visit_count += 1;
                 Ok(m_lock.clone())
             }
             Err(e) => Err(e),
@@ -355,21 +361,23 @@ mod tests {
 
     #[test]
     fn test_get_continuous_stage() {
-        let c1 = Item {
+        let c1 = Box::new(Item {
+            id: uuid::Uuid::new_v4().to_string(),
             name: "Project 1".to_owned(),
             location: "a1".to_owned(),
             description: "cool project".to_owned(),
             score: Box::new(Glicko2::new()),
-        };
+        });
 
         let cc1 = c1.clone();
 
-        let c2 = Item {
+        let c2 = Box::new(Item {
+            id: uuid::Uuid::new_v4().to_string(),
             name: "Project 2".to_owned(),
             location: "a1".to_owned(),
             description: "cool project".to_owned(),
             score: Box::new(Glicko2::new()),
-        };
+        });
 
         let cc2 = c2.clone();
 
@@ -380,30 +388,32 @@ mod tests {
         let next_match = scheduler_state.get_continuous_stage().unwrap();
         let read = next_match.read().unwrap();
 
-        if *read.i1 != cc1 {
-            assert_eq!(*read.i1, cc2);
-            assert_eq!(*read.i2, cc1);
+        if *read.i1 != cc1.id {
+            assert_eq!(*read.i1, cc2.id);
+            assert_eq!(*read.i2, cc1.id);
         } else {
-            assert_eq!(*read.i1, cc1);
-            assert_eq!(*read.i2, cc2);
+            assert_eq!(*read.i1, cc1.id);
+            assert_eq!(*read.i2, cc2.id);
         }
     }
 
     #[test]
     fn test_give_judge_next_match() {
-        let c1 = Item {
+        let c1 = Box::new(Item {
+            id: uuid::Uuid::new_v4().to_string(),
             name: "Project 1".to_owned(),
             location: "a1".to_owned(),
             description: "cool project".to_owned(),
             score: Box::new(Glicko2::new()),
-        };
+        });
 
-        let c2 = Item {
+        let c2 = Box::new(Item {
+            id: uuid::Uuid::new_v4().to_string(),
             name: "Project 2".to_owned(),
             location: "a1".to_owned(),
             description: "cool project".to_owned(),
             score: Box::new(Glicko2::new()),
-        };
+        });
 
         let mut arr = vec![c1, c2];
         let scheduler_state = Arc::from(SchedulerState::new());
@@ -426,19 +436,21 @@ mod tests {
 
     #[test]
     fn test_judge_match() {
-        let c1 = Item {
+        let c1 = Box::new(Item {
+            id: uuid::Uuid::new_v4().to_string(),
             name: "Project 1".to_owned(),
             location: "a1".to_owned(),
             description: "cool project".to_owned(),
             score: Box::new(Glicko2::new()),
-        };
+        });
 
-        let c2 = Item {
+        let c2 = Box::new(Item {
+            id: uuid::Uuid::new_v4().to_string(),
             name: "Project 2".to_owned(),
             location: "a1".to_owned(),
             description: "cool project".to_owned(),
             score: Box::new(Glicko2::new()),
-        };
+        });
 
         let mut arr = vec![c1, c2];
         let scheduler_state = Arc::from(SchedulerState::new());
@@ -465,26 +477,29 @@ mod tests {
 
     #[test]
     fn test_seed_start_thread() {
-        let c1 = Item {
+        let c1 = Box::new(Item {
+            id: uuid::Uuid::new_v4().to_string(),
             name: "Project 1".to_owned(),
             location: "a1".to_owned(),
             description: "cool project".to_owned(),
             score: Box::new(Glicko2::new()),
-        };
+        });
 
-        let c2 = Item {
+        let c2 = Box::new(Item {
+            id: uuid::Uuid::new_v4().to_string(),
             name: "Project 2".to_owned(),
             location: "a1".to_owned(),
             description: "cool project".to_owned(),
             score: Box::new(Glicko2::new()),
-        };
+        });
 
-        let c3 = Item {
+        let c3 = Box::new(Item {
+            id: uuid::Uuid::new_v4().to_string(),
             name: "Project 3".to_owned(),
             location: "a1".to_owned(),
             description: "cool project".to_owned(),
             score: Box::new(Glicko2::new()),
-        };
+        });
 
         let mut arr = vec![c1, c2, c3];
 
@@ -502,26 +517,29 @@ mod tests {
 
     #[test]
     fn test_seed_start() {
-        let c1 = Item {
+        let c1 = Box::new(Item {
+            id: uuid::Uuid::new_v4().to_string(),
             name: "Project 1".to_owned(),
             location: "a1".to_owned(),
             description: "cool project".to_owned(),
             score: Box::new(Glicko2::new()),
-        };
+        });
 
-        let c2 = Item {
+        let c2 = Box::new(Item {
+            id: uuid::Uuid::new_v4().to_string(),
             name: "Project 2".to_owned(),
             location: "a1".to_owned(),
             description: "cool project".to_owned(),
             score: Box::new(Glicko2::new()),
-        };
+        });
 
-        let c3 = Item {
+        let c3 = Box::new(Item {
+            id: uuid::Uuid::new_v4().to_string(),
             name: "Project 3".to_owned(),
             location: "a1".to_owned(),
             description: "cool project".to_owned(),
             score: Box::new(Glicko2::new()),
-        };
+        });
 
         let mut arr = vec![c1, c2, c3];
 
@@ -536,58 +554,64 @@ mod tests {
 
     #[test]
     fn test_add_items() {
-        let c1 = Item {
+        let c1 = Box::new(Item {
+            id: uuid::Uuid::new_v4().to_string(),
             name: "Project 1".to_owned(),
             location: "a1".to_owned(),
             description: "cool project".to_owned(),
             score: Box::new(Glicko2::new()),
-        };
+        });
 
-        let c2 = Item {
+        let c2 = Box::new(Item {
+            id: uuid::Uuid::new_v4().to_string(),
             name: "Project 2".to_owned(),
             location: "a1".to_owned(),
             description: "cool project".to_owned(),
             score: Box::new(Glicko2::new()),
-        };
+        });
 
-        let c3 = Item {
+        let c3 = Box::new(Item {
+            id: uuid::Uuid::new_v4().to_string(),
             name: "Project 3".to_owned(),
             location: "a1".to_owned(),
             description: "cool project".to_owned(),
             score: Box::new(Glicko2::new()),
-        };
+        });
 
         let mut arr = vec![c1, c2, c3];
 
         let scheduler_state = SchedulerState::new();
         scheduler_state.add_items(&mut arr);
-        let items = scheduler_state.items.read().unwrap();
+        let items = scheduler_state.items;
 
         assert_eq!(items.len(), 3);
     }
 
     #[test]
     fn test_create_initial_matches() {
-        let c1 = Item {
+        let c1 = Box::new(Item {
+            id: uuid::Uuid::new_v4().to_string(),
             name: "Project 1".to_owned(),
             location: "a1".to_owned(),
             description: "cool project".to_owned(),
             score: Box::new(Glicko2::new()),
-        };
+        });
 
-        let c2 = Item {
+        let c2 = Box::new(Item {
+            id: uuid::Uuid::new_v4().to_string(),
             name: "Project 2".to_owned(),
             location: "a1".to_owned(),
             description: "cool project".to_owned(),
             score: Box::new(Glicko2::new()),
-        };
+        });
 
-        let c3 = Item {
+        let c3 = Box::new(Item {
+            id: uuid::Uuid::new_v4().to_string(),
             name: "Project 3".to_owned(),
             location: "a1".to_owned(),
             description: "cool project".to_owned(),
             score: Box::new(Glicko2::new()),
-        };
+        });
 
         let arr = vec![c1, c2, c3];
 

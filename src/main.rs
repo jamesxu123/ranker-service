@@ -30,9 +30,9 @@ fn test2() {
         score: Box::new(Glicko2::new()),
     });
 
-    let mut arr = vec![c1, c2];
+    let arr = vec![c1, c2];
     let scheduler_state = Arc::from(SchedulerState::new());
-    scheduler_state.add_items(&mut arr);
+    scheduler_state.add_items(arr);
     scheduler_state.seed_start(1);
 
     let j1 = Judge::new("J1".to_owned());

@@ -254,10 +254,11 @@ impl SchedulerState {
         true
     }
 
-    pub fn add_items(&self, new_items: &mut Vec<Box<Item>>) {
+    pub fn add_items(&self, new_items: Vec<Box<Item>>) {
         let items = &self.items;
-        for item in new_items.into_iter() {
-            items.insert(item.id.clone(), item.clone());
+        for item in new_items {
+            let id: String = item.id.clone();
+            items.insert(id, item);
         }
     }
 
@@ -383,7 +384,7 @@ mod tests {
 
         let mut arr = vec![c1, c2];
         let scheduler_state = Arc::from(SchedulerState::new());
-        scheduler_state.add_items(&mut arr);
+        scheduler_state.add_items(arr);
 
         let next_match = scheduler_state.get_continuous_stage().unwrap();
         let read = next_match.read().unwrap();
@@ -417,7 +418,7 @@ mod tests {
 
         let mut arr = vec![c1, c2];
         let scheduler_state = Arc::from(SchedulerState::new());
-        scheduler_state.add_items(&mut arr);
+        scheduler_state.add_items(arr);
         scheduler_state.seed_start(1);
 
         let j1 = Judge::new("J1".to_owned());
@@ -454,7 +455,7 @@ mod tests {
 
         let mut arr = vec![c1, c2];
         let scheduler_state = Arc::from(SchedulerState::new());
-        scheduler_state.add_items(&mut arr);
+        scheduler_state.add_items(arr);
         scheduler_state.seed_start(1);
 
         let j1 = Judge::new("J1".to_owned());
@@ -504,7 +505,7 @@ mod tests {
         let mut arr = vec![c1, c2, c3];
 
         let scheduler_state = Arc::from(SchedulerState::new());
-        scheduler_state.add_items(&mut arr);
+        scheduler_state.add_items(arr);
         let ss = Arc::clone(&scheduler_state);
 
         let handle = thread::spawn(move || {
@@ -544,7 +545,7 @@ mod tests {
         let mut arr = vec![c1, c2, c3];
 
         let scheduler_state = SchedulerState::new();
-        scheduler_state.add_items(&mut arr);
+        scheduler_state.add_items(arr);
         let result = scheduler_state.seed_start(3);
         let matches = scheduler_state.matches.read().unwrap();
 
@@ -581,7 +582,7 @@ mod tests {
         let mut arr = vec![c1, c2, c3];
 
         let scheduler_state = SchedulerState::new();
-        scheduler_state.add_items(&mut arr);
+        scheduler_state.add_items(arr);
         let items = scheduler_state.items;
 
         assert_eq!(items.len(), 3);

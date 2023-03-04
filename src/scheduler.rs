@@ -198,29 +198,29 @@ impl SchedulerState {
         v
     }
 
-    fn state_machine_internal_transition(&self) -> States {
+    fn state_machine_internal_transition(&self) -> Result<States, Box<dyn Error + '_>> {
         let guard = self.current_state.clone();
         let mut state = guard.write().unwrap();
 
         match *state {
-            States::NoState => States::NoState,
+            States::NoState => Ok(States::NoState),
             States::Init => {
-                let q = self.mq.read().unwrap();
+                let q = self.mq.read()?;
                 let peek = q.peek_min();
                 if let Some(p) = peek {
                     if *p.1 < 1 {
                         *state = States::Init;
-                        return States::Init;
+                        return Ok(States::Init);
                     }
                     *state = States::Continuous;
-                    States::Continuous
+                    Ok(States::Continuous)
                 } else {
                     *state = States::Init;
-                    States::Init
+                    Ok(States::Init)
                 }
             }
-            States::Continuous => States::Continuous,
-            States::End => States::End,
+            States::Continuous => Ok(States::Continuous),
+            States::End => Ok(States::End),
         }
     }
 
@@ -336,8 +336,8 @@ impl SchedulerState {
     pub fn give_judge_next_match(
         &self,
         judge: &Judge,
-    ) -> Result<Arc<RwLock<MatchPair>>, SchedulerError> {
-        self.state_machine_internal_transition();
+    ) -> Result<Arc<RwLock<MatchPair>>, Box<dyn Error + '_>> {
+        self.state_machine_internal_transition()?;
         let nm = self.find_next_match();
         match nm {
             Ok(m_lock) => {
@@ -349,7 +349,7 @@ impl SchedulerState {
                 m.visit_count += 1;
                 Ok(m_lock.clone())
             }
-            Err(e) => Err(e),
+            Err(e) => Err(Box::new(e)),
         }
     }
 }
@@ -358,9 +358,12 @@ impl SchedulerState {
 mod tests {
     use std::thread;
 
+    use ntest::timeout;
+
     use super::*;
 
     #[test]
+    #[timeout(100)]
     fn test_get_continuous_stage() {
         let c1 = Box::new(Item {
             id: uuid::Uuid::new_v4().to_string(),
@@ -399,6 +402,7 @@ mod tests {
     }
 
     #[test]
+    #[timeout(100)]
     fn test_give_judge_next_match() {
         let c1 = Box::new(Item {
             id: uuid::Uuid::new_v4().to_string(),
@@ -436,6 +440,7 @@ mod tests {
     }
 
     #[test]
+    #[timeout(100)]
     fn test_judge_match() {
         let c1 = Box::new(Item {
             id: uuid::Uuid::new_v4().to_string(),
@@ -477,6 +482,7 @@ mod tests {
     }
 
     #[test]
+    #[timeout(100)]
     fn test_seed_start_thread() {
         let c1 = Box::new(Item {
             id: uuid::Uuid::new_v4().to_string(),
@@ -517,6 +523,7 @@ mod tests {
     }
 
     #[test]
+    #[timeout(100)]
     fn test_seed_start() {
         let c1 = Box::new(Item {
             id: uuid::Uuid::new_v4().to_string(),
@@ -554,6 +561,7 @@ mod tests {
     }
 
     #[test]
+    #[timeout(100)]
     fn test_add_items() {
         let c1 = Box::new(Item {
             id: uuid::Uuid::new_v4().to_string(),
@@ -589,6 +597,7 @@ mod tests {
     }
 
     #[test]
+    #[timeout(100)]
     fn test_create_initial_matches() {
         let c1 = Box::new(Item {
             id: uuid::Uuid::new_v4().to_string(),
@@ -622,6 +631,7 @@ mod tests {
     }
 
     #[test]
+    #[timeout(100)]
     fn test_add_judges() {
         let j1 = Judge::new("J1".to_owned());
         let j2 = Judge::new("J2".to_owned());

@@ -158,9 +158,12 @@ fn get_new_rating_dev(g_cur: &Glicko2, sigma_prime: f64) -> f64 {
 
 #[cfg(test)]
 mod tests {
+    use ntest::timeout;
+
     use super::*;
 
     #[test]
+    #[timeout(100)]
     fn test_example_all() {
         let mut p1 = Glicko2::from_glicko1(&Glicko1 {
             rating: 1500f64,
@@ -199,18 +202,21 @@ mod tests {
     }
 
     #[test]
+    #[timeout(100)]
     fn test_g() {
         let g_val = g(0.5);
         assert!((g_val - 0.96404).abs() < 0.001)
     }
 
     #[test]
+    #[timeout(100)]
     fn test_e() {
         let e_val = e(0.6, 0.5, 0.5);
         assert!((e_val - 0.52408).abs() < 0.001)
     }
 
     #[test]
+    #[timeout(100)]
     fn test_compute_delta() {
         let p1: Glicko2 = Glicko2::from_glicko1(&Glicko1 {
             rating: 1500f64,

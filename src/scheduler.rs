@@ -382,7 +382,7 @@ mod tests {
 
         let cc2 = c2.clone();
 
-        let mut arr = vec![c1, c2];
+        let arr = vec![c1, c2];
         let scheduler_state = Arc::from(SchedulerState::new());
         scheduler_state.add_items(arr);
 
@@ -416,7 +416,7 @@ mod tests {
             score: Box::new(Glicko2::new()),
         });
 
-        let mut arr = vec![c1, c2];
+        let arr = vec![c1, c2];
         let scheduler_state = Arc::from(SchedulerState::new());
         scheduler_state.add_items(arr);
         scheduler_state.seed_start(1);
@@ -453,7 +453,7 @@ mod tests {
             score: Box::new(Glicko2::new()),
         });
 
-        let mut arr = vec![c1, c2];
+        let arr = vec![c1, c2];
         let scheduler_state = Arc::from(SchedulerState::new());
         scheduler_state.add_items(arr);
         scheduler_state.seed_start(1);
@@ -502,7 +502,7 @@ mod tests {
             score: Box::new(Glicko2::new()),
         });
 
-        let mut arr = vec![c1, c2, c3];
+        let arr = vec![c1, c2, c3];
 
         let scheduler_state = Arc::from(SchedulerState::new());
         scheduler_state.add_items(arr);
@@ -542,7 +542,7 @@ mod tests {
             score: Box::new(Glicko2::new()),
         });
 
-        let mut arr = vec![c1, c2, c3];
+        let arr = vec![c1, c2, c3];
 
         let scheduler_state = SchedulerState::new();
         scheduler_state.add_items(arr);
@@ -579,7 +579,7 @@ mod tests {
             score: Box::new(Glicko2::new()),
         });
 
-        let mut arr = vec![c1, c2, c3];
+        let arr = vec![c1, c2, c3];
 
         let scheduler_state = SchedulerState::new();
         scheduler_state.add_items(arr);

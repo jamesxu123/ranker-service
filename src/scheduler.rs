@@ -146,7 +146,7 @@ impl SchedulerState {
                 match_pair.winner = Some(winner);
 
                 judge.log_match_action();
-                
+
                 // TODO: this unwrap is _probably_ a bad idea
                 let mut s1 = self.items.get_mut(&match_pair.i1).unwrap();
                 let mut s2 = self.items.get_mut(&match_pair.i2).unwrap();

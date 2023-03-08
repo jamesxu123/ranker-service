@@ -1,54 +1,60 @@
-use scheduler::{Item, MatchWinner, SchedulerState};
-use std::sync::Arc;
-
-use crate::{glicko2::algo::Glicko2, scheduler::Judge};
-
-pub mod glicko2;
-mod scheduler;
+use axum::{
+    routing::{get, post},
+    http::StatusCode,
+    response::IntoResponse,
+    Json, Router,
+};
+use serde::{Deserialize, Serialize};
+use std::net::SocketAddr;
 
 #[tokio::main]
 async fn main() {
-    println!("This is very WIP.");
-    // test().await
-    test2()
+    // build our application with a route
+    let app = Router::new()
+        // `GET /` goes to `root`
+        .route("/", get(root))
+        // `POST /users` goes to `create_user`
+        .route("/users", post(create_user));
+
+    // run our app with hyper
+    // `axum::Server` is a re-export of `hyper::Server`
+    let addr = SocketAddr::from(([127, 0, 0, 1], 3000));
+    axum::Server::bind(&addr)
+        .serve(app.into_make_service())
+        .await
+        .unwrap();
 }
 
-fn test2() {
-    let c1 = Box::new(Item {
-        id: uuid::Uuid::new_v4().to_string(),
-        name: "Project 1".to_owned(),
-        location: "a1".to_owned(),
-        description: "cool project".to_owned(),
-        score: Box::new(Glicko2::new()),
-    });
+// basic handler that responds with a static string
+async fn root() -> &'static str {
+    "Hello, World!"
+}
 
-    let c2 = Box::new(Item {
-        id: uuid::Uuid::new_v4().to_string(),
-        name: "Project 2".to_owned(),
-        location: "a1".to_owned(),
-        description: "cool project".to_owned(),
-        score: Box::new(Glicko2::new()),
-    });
-
-    let arr = vec![c1, c2];
-    let scheduler_state = Arc::from(SchedulerState::new());
-    scheduler_state.add_items(arr);
-    scheduler_state.seed_start(1);
-
-    let j1 = Judge::new("J1".to_owned());
-    let j = j1.clone();
-    let mut jv = vec![j1];
-    scheduler_state.add_judges(&mut jv);
-
-    let match_id = {
-        let next_match = scheduler_state.give_judge_next_match(&j).unwrap();
-        let x = next_match.read().unwrap().match_pair_id.clone();
-        x
+async fn create_user(
+    // this argument tells axum to parse the request body
+    // as JSON into a `CreateUser` type
+    Json(payload): Json<CreateUser>,
+) -> (StatusCode, Json<User>) {
+    // insert your application logic here
+    let user = User {
+        id: 1337,
+        username: payload.username,
     };
-    scheduler_state.judge_match(&j, &match_id, MatchWinner::A);
 
-    let mut items = scheduler_state.get_items();
-    items.sort_by(|a, b| a.score.mu.total_cmp(&b.score.mu));
+    // this will be converted into a JSON response
+    // with a status code of `201 Created`
+    (StatusCode::CREATED, Json(user))
+}
 
-    println!("Items: {:#?}", items);
+// the input to our `create_user` handler
+#[derive(Deserialize)]
+struct CreateUser {
+    username: String,
+}
+
+// the output to our `create_user` handler
+#[derive(Serialize)]
+struct User {
+    id: u64,
+    username: String,
 }

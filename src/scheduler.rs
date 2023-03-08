@@ -474,6 +474,8 @@ mod tests {
         items.sort_by(|a, b| a.score.mu.total_cmp(&b.score.mu));
 
         println!("{:#?}", items);
+        assert!((items[0].score.mu + 8.34764).abs() < 0.001);
+        assert!((items[1].score.mu - 8.34764).abs() < 0.001);
     }
 
     #[test]

@@ -2,7 +2,6 @@ use dashmap::DashMap;
 use priority_queue::DoublePriorityQueue;
 use rand::seq::SliceRandom;
 use std::{
-    collections::HashMap,
     error::Error,
     fmt,
     sync::{Arc, RwLock},
@@ -79,7 +78,7 @@ pub struct SchedulerState {
     current_state: Arc<RwLock<States>>,
     judges: Arc<RwLock<Vec<Judge>>>,
     items: Arc<DashMap<String, Box<Item>>>,
-    matches: Arc<RwLock<HashMap<String, Arc<RwLock<MatchPair>>>>>,
+    matches: Arc<DashMap<String, Arc<RwLock<MatchPair>>>>,
     mq: Arc<RwLock<DoublePriorityQueue<String, i32>>>,
 }
 
@@ -126,7 +125,7 @@ impl SchedulerState {
         let current_state = Arc::from(RwLock::from(States::NoState));
         let judges = Arc::from(RwLock::from(vec![]));
         let items = Arc::from(DashMap::new());
-        let matches = Arc::from(RwLock::from(HashMap::new()));
+        let matches = Arc::from(DashMap::new());
         let mq = Arc::from(RwLock::from(DoublePriorityQueue::new()));
         SchedulerState {
             current_state,
@@ -138,19 +137,16 @@ impl SchedulerState {
     }
 
     pub fn judge_match(&self, judge: &Judge, match_id: &str, winner: MatchWinner) -> bool {
-        let m = self.matches.write();
-        let matches = m.unwrap();
+        let matches = self.get_matches();
 
         if let Some(match_pair_guard) = matches.get(match_id) {
             if let Ok(mut match_pair) = match_pair_guard.write() {
                 match_pair.winner = Some(winner);
 
                 judge.log_match_action();
-
-                // TODO: this unwrap is _probably_ a bad idea
-                let mut s1 = self.items.get_mut(&match_pair.i1).unwrap();
-                let mut s2 = self.items.get_mut(&match_pair.i2).unwrap();
-                // TODO: does not actually update backing items array...I don't have a good solution here
+                let binding = self.items.clone();
+                let mut s1 = binding.get_mut(&match_pair.i1).unwrap();
+                let mut s2 = binding.get_mut(&match_pair.i2).unwrap();
                 return match winner {
                     MatchWinner::A => {
                         let s1_im = s1.score.clone();
@@ -181,7 +177,8 @@ impl SchedulerState {
     }
 
     pub fn get_judges(&self) -> Vec<Judge> {
-        let iter = self.judges.read().unwrap();
+        let binding = self.judges.clone();
+        let iter = binding.read().unwrap();
         let mut v: Vec<Judge> = vec![];
         for i in iter.iter() {
             v.push(i.clone());
@@ -224,7 +221,7 @@ impl SchedulerState {
         }
     }
 
-    pub fn get_matches(&self) -> Arc<RwLock<HashMap<String, Arc<RwLock<MatchPair>>>>> {
+    pub fn get_matches(&self) -> Arc<DashMap<String, Arc<RwLock<MatchPair>>>> {
         self.matches.clone()
     }
 
@@ -233,8 +230,7 @@ impl SchedulerState {
             return false;
         }
 
-        let matches_binding = self.matches.clone();
-        let mut matches = matches_binding.write().unwrap();
+        let matches = self.get_matches();
 
         let pq_binding = self.mq.clone();
         let mut pq = pq_binding.write().unwrap();
@@ -263,7 +259,8 @@ impl SchedulerState {
     }
 
     pub fn add_judges(&self, new_judges: &mut Vec<Judge>) {
-        let mut judges = self.judges.write().unwrap();
+        let binding = self.judges.clone();
+        let mut judges = binding.write().unwrap();
         judges.append(new_judges);
     }
 
@@ -286,8 +283,7 @@ impl SchedulerState {
         min_prio: i32,
     ) -> Option<Result<Arc<RwLock<MatchPair>>, SchedulerError>> {
         let q = self.mq.write().unwrap();
-        let hm = self.get_matches();
-        let matches = hm.write().unwrap();
+        let matches = self.get_matches();
         if let Some(best) = q.peek_min() {
             let key = best.0;
             let prio = *best.1;
@@ -327,8 +323,7 @@ impl SchedulerState {
 
         let as_arc = Arc::from(RwLock::from(m));
 
-        let hm_binding = self.get_matches();
-        let mut hm = hm_binding.write().unwrap();
+        let hm = self.get_matches();
         hm.insert(id, as_arc.clone());
         Ok(as_arc)
     }
@@ -554,7 +549,7 @@ mod tests {
         let scheduler_state = SchedulerState::new();
         scheduler_state.add_items(arr);
         let result = scheduler_state.seed_start(3);
-        let matches = scheduler_state.matches.read().unwrap();
+        let matches = scheduler_state.get_matches();
 
         assert_eq!(matches.len(), 6);
         assert!(result);

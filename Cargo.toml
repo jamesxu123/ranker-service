@@ -11,9 +11,11 @@ dashmap = "5.4.0"
 ntest = "0.9.0"
 priority-queue = "1.3.1"
 rand = "0.8.5"
-serde = {version = "1.0.153", features = ["derive"]}
+serde = {version = "1.0.154", features = ["derive", "rc"]}
 tokio = { version = "1", features = ["full"] }
 hyper = { version = "0.14.24", features = ["full"] }
+tracing-subscriber = "0.3.16"
+tracing = "0.1.37"
 
 [dependencies.uuid]
 version = "1.3.0"

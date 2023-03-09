@@ -1,3 +1,5 @@
+use serde::Serialize;
+
 const TAU: f64 = 0.5;
 const FACTOR: f64 = 173.7178;
 const EPSILON: f64 = 0.000001;
@@ -8,7 +10,7 @@ pub struct Glicko1 {
     pub rd: f64,
 }
 
-#[derive(Copy, Clone, Debug, PartialEq)]
+#[derive(Copy, Clone, Debug, PartialEq, Serialize)]
 pub struct Glicko2 {
     pub mu: f64,
     pub sigma: f64,

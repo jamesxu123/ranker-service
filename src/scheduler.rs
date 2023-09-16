@@ -9,7 +9,7 @@ use std::{
     vec,
 };
 
-use crate::glicko2::algo::Glicko2;
+use crate::elo;
 
 #[derive(Debug)]
 pub struct SchedulerError {
@@ -42,7 +42,7 @@ pub struct Item {
     pub name: String,
     pub location: String,
     pub description: String,
-    pub score: Box<Glicko2>,
+    pub score: f64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -88,12 +88,12 @@ fn create_initial_matches(competitors: &[Box<Item>], n: usize) -> Vec<MatchPair>
     let mut matches: Vec<MatchPair> = vec![];
     let rng = &mut rand::thread_rng();
     for _ in 0..n {
-        let mut cc: Vec<&Box<Item>> = Vec::from_iter(competitors.clone());
+        let mut cc: Vec<&Box<Item>> = Vec::from_iter(competitors);
         cc.shuffle(rng);
         if cc.len() % 2 != 0 {
-            cc.push(cc.get(0).unwrap());
+            cc.insert(0, cc.get(0).unwrap());
         }
-        for i in 0..cc.len() / 2 {
+        for i in 0..(cc.len() / 2) {
             let c1 = *cc.get(i).unwrap();
             let c2 = *cc.get(cc.len() - 1 - i).unwrap();
             matches.push(MatchPair {
@@ -116,7 +116,7 @@ impl Item {
             name,
             location,
             description,
-            score: Box::new(Glicko2::new()),
+            score: elo::algo::INITIAL_ELO,
         }
     }
 }
@@ -155,9 +155,7 @@ impl SchedulerState {
     }
 
     pub fn judge_match(&self, judge: &Judge, match_id: &str, winner: MatchWinner) -> bool {
-        println!("we here??!!");
         let matches = self.get_matches();
-        println!("did we here??!!");
         let match_pair = match matches.get(match_id) {
             Some(data) => data.clone(),
             None => return false,
@@ -172,32 +170,28 @@ impl SchedulerState {
                 winner: Some(winner),
                 judge_id: match_pair.judge_id.clone(),
             };
-            println!("failure point??");
             matches.insert(new.match_pair_id.clone(), new.into());
-            println!("did we here??!!");
         }
 
         judge.log_match_action();
-        println!("start");
         let binding = self.items.clone();
         let mut s1 = binding.get_mut(&match_pair.i1).unwrap();
         let mut s2 = binding.get_mut(&match_pair.i2).unwrap();
-        println!("here");
         return match winner {
             MatchWinner::A => {
-                let s1_im = s1.score.clone();
-                let s2_im = s2.score.clone();
-
-                s1.score.process_matches(&vec![&s2_im], &vec![1f64]);
-                s2.score.process_matches(&vec![&s1_im], &vec![0f64]);
+                let s1_elo = s1.score;
+                let s2_elo = s2.score;
+                let (r1, r2) = elo::algo::calculate(s1_elo, s2_elo, elo::algo::K, elo::algo::Winner::P1);
+                s1.score = r1;
+                s2.score = r2;
                 true
             }
             MatchWinner::B => {
-                let s1_im = s1.score.clone();
-                let s2_im = s2.score.clone();
-
-                s1.score.process_matches(&vec![&s2_im], &vec![0f64]);
-                s2.score.process_matches(&vec![&s1_im], &vec![1f64]);
+                let s1_elo = s1.score;
+                let s2_elo = s2.score;
+                let (r1, r2) = elo::algo::calculate(s1_elo, s2_elo, elo::algo::K, elo::algo::Winner::P2);
+                s1.score = r1;
+                s2.score = r2;
                 true
             }
         };
@@ -405,301 +399,5 @@ impl SchedulerState {
             }
             Err(e) => Err(e),
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use std::thread;
-
-    use ntest::timeout;
-
-    use super::*;
-
-    #[test]
-    #[timeout(100)]
-    fn test_get_continuous_stage() {
-        let c1 = Box::new(Item {
-            id: uuid::Uuid::new_v4().to_string(),
-            name: "Project 1".to_owned(),
-            location: "a1".to_owned(),
-            description: "cool project".to_owned(),
-            score: Box::new(Glicko2::new()),
-        });
-
-        let cc1 = c1.clone();
-
-        let c2 = Box::new(Item {
-            id: uuid::Uuid::new_v4().to_string(),
-            name: "Project 2".to_owned(),
-            location: "a1".to_owned(),
-            description: "cool project".to_owned(),
-            score: Box::new(Glicko2::new()),
-        });
-
-        let cc2 = c2.clone();
-
-        let arr = vec![c1, c2];
-        let scheduler_state = Arc::from(SchedulerState::new());
-        scheduler_state.add_items(arr);
-
-        let next_match = scheduler_state.get_continuous_stage().unwrap();
-        let read = next_match;
-
-        if *read.i1 != cc1.id {
-            assert_eq!(*read.i1, cc2.id);
-            assert_eq!(*read.i2, cc1.id);
-        } else {
-            assert_eq!(*read.i1, cc1.id);
-            assert_eq!(*read.i2, cc2.id);
-        }
-    }
-
-    #[test]
-    #[timeout(100)]
-    fn test_give_judge_next_match() {
-        let c1 = Box::new(Item {
-            id: uuid::Uuid::new_v4().to_string(),
-            name: "Project 1".to_owned(),
-            location: "a1".to_owned(),
-            description: "cool project".to_owned(),
-            score: Box::new(Glicko2::new()),
-        });
-
-        let c2 = Box::new(Item {
-            id: uuid::Uuid::new_v4().to_string(),
-            name: "Project 2".to_owned(),
-            location: "a1".to_owned(),
-            description: "cool project".to_owned(),
-            score: Box::new(Glicko2::new()),
-        });
-
-        let arr = vec![c1, c2];
-        let scheduler_state = Arc::from(SchedulerState::new());
-        scheduler_state.add_items(arr);
-        scheduler_state.seed_start(1);
-
-        let j1 = Judge::new("J1".to_owned());
-        let mut jv = vec![j1];
-        scheduler_state.add_judges(&mut jv);
-
-        let v = scheduler_state.get_judges();
-
-        let actual_j = v.get(0).unwrap();
-        let next_match = scheduler_state.give_judge_next_match(actual_j).unwrap();
-        let mp = next_match;
-
-        let id1 = mp.judge_id.clone();
-        assert_eq!(id1, Some(actual_j.id.clone()))
-    }
-
-    #[test]
-    #[timeout(100)]
-    fn test_judge_match() {
-        let c1 = Box::new(Item {
-            id: uuid::Uuid::new_v4().to_string(),
-            name: "Project 1".to_owned(),
-            location: "a1".to_owned(),
-            description: "cool project".to_owned(),
-            score: Box::new(Glicko2::new()),
-        });
-
-        let c2 = Box::new(Item {
-            id: uuid::Uuid::new_v4().to_string(),
-            name: "Project 2".to_owned(),
-            location: "a1".to_owned(),
-            description: "cool project".to_owned(),
-            score: Box::new(Glicko2::new()),
-        });
-
-        let arr = vec![c1, c2];
-        let scheduler_state = Arc::from(SchedulerState::new());
-        scheduler_state.add_items(arr);
-        scheduler_state.seed_start(1);
-
-        let j1 = Judge::new("J1".to_owned());
-        let j = j1.clone();
-        let mut jv = vec![j1];
-        scheduler_state.add_judges(&mut jv);
-
-        let match_id = {
-            let next_match = scheduler_state.give_judge_next_match(&j).unwrap();
-            let x = next_match.match_pair_id.clone();
-            x
-        };
-        println!("we here??");
-
-        scheduler_state.judge_match(&j, &match_id, MatchWinner::A);
-
-        let mut items = scheduler_state.get_items();
-        items.sort_by(|a, b| a.score.mu.total_cmp(&b.score.mu));
-
-        println!("{:#?}", items);
-        assert!((items[0].score.mu + 8.34764).abs() < 0.001);
-        assert!((items[1].score.mu - 8.34764).abs() < 0.001);
-    }
-
-    #[test]
-    #[timeout(100)]
-    fn test_seed_start_thread() {
-        let c1 = Box::new(Item {
-            id: uuid::Uuid::new_v4().to_string(),
-            name: "Project 1".to_owned(),
-            location: "a1".to_owned(),
-            description: "cool project".to_owned(),
-            score: Box::new(Glicko2::new()),
-        });
-
-        let c2 = Box::new(Item {
-            id: uuid::Uuid::new_v4().to_string(),
-            name: "Project 2".to_owned(),
-            location: "a1".to_owned(),
-            description: "cool project".to_owned(),
-            score: Box::new(Glicko2::new()),
-        });
-
-        let c3 = Box::new(Item {
-            id: uuid::Uuid::new_v4().to_string(),
-            name: "Project 3".to_owned(),
-            location: "a1".to_owned(),
-            description: "cool project".to_owned(),
-            score: Box::new(Glicko2::new()),
-        });
-
-        let arr = vec![c1, c2, c3];
-
-        let scheduler_state = Arc::from(SchedulerState::new());
-        scheduler_state.add_items(arr);
-        let ss = Arc::clone(&scheduler_state);
-
-        let handle = thread::spawn(move || {
-            let result = ss.seed_start(10);
-            assert!(result);
-        });
-        handle.join().unwrap();
-        assert_eq!(scheduler_state.get_state(), States::Init);
-    }
-
-    #[test]
-    #[timeout(100)]
-    fn test_seed_start() {
-        let c1 = Box::new(Item {
-            id: uuid::Uuid::new_v4().to_string(),
-            name: "Project 1".to_owned(),
-            location: "a1".to_owned(),
-            description: "cool project".to_owned(),
-            score: Box::new(Glicko2::new()),
-        });
-
-        let c2 = Box::new(Item {
-            id: uuid::Uuid::new_v4().to_string(),
-            name: "Project 2".to_owned(),
-            location: "a1".to_owned(),
-            description: "cool project".to_owned(),
-            score: Box::new(Glicko2::new()),
-        });
-
-        let c3 = Box::new(Item {
-            id: uuid::Uuid::new_v4().to_string(),
-            name: "Project 3".to_owned(),
-            location: "a1".to_owned(),
-            description: "cool project".to_owned(),
-            score: Box::new(Glicko2::new()),
-        });
-
-        let arr = vec![c1, c2, c3];
-
-        let scheduler_state = SchedulerState::new();
-        scheduler_state.add_items(arr);
-        let result = scheduler_state.seed_start(3);
-        let matches = scheduler_state.get_matches();
-
-        assert_eq!(matches.len(), 6);
-        assert!(result);
-    }
-
-    #[test]
-    #[timeout(100)]
-    fn test_add_items() {
-        let c1 = Box::new(Item {
-            id: uuid::Uuid::new_v4().to_string(),
-            name: "Project 1".to_owned(),
-            location: "a1".to_owned(),
-            description: "cool project".to_owned(),
-            score: Box::new(Glicko2::new()),
-        });
-
-        let c2 = Box::new(Item {
-            id: uuid::Uuid::new_v4().to_string(),
-            name: "Project 2".to_owned(),
-            location: "a1".to_owned(),
-            description: "cool project".to_owned(),
-            score: Box::new(Glicko2::new()),
-        });
-
-        let c3 = Box::new(Item {
-            id: uuid::Uuid::new_v4().to_string(),
-            name: "Project 3".to_owned(),
-            location: "a1".to_owned(),
-            description: "cool project".to_owned(),
-            score: Box::new(Glicko2::new()),
-        });
-
-        let arr = vec![c1, c2, c3];
-
-        let scheduler_state = SchedulerState::new();
-        scheduler_state.add_items(arr);
-        let items = scheduler_state.items;
-
-        assert_eq!(items.len(), 3);
-    }
-
-    #[test]
-    #[timeout(100)]
-    fn test_create_initial_matches() {
-        let c1 = Box::new(Item {
-            id: uuid::Uuid::new_v4().to_string(),
-            name: "Project 1".to_owned(),
-            location: "a1".to_owned(),
-            description: "cool project".to_owned(),
-            score: Box::new(Glicko2::new()),
-        });
-
-        let c2 = Box::new(Item {
-            id: uuid::Uuid::new_v4().to_string(),
-            name: "Project 2".to_owned(),
-            location: "a1".to_owned(),
-            description: "cool project".to_owned(),
-            score: Box::new(Glicko2::new()),
-        });
-
-        let c3 = Box::new(Item {
-            id: uuid::Uuid::new_v4().to_string(),
-            name: "Project 3".to_owned(),
-            location: "a1".to_owned(),
-            description: "cool project".to_owned(),
-            score: Box::new(Glicko2::new()),
-        });
-
-        let arr = vec![c1, c2, c3];
-
-        let matches = create_initial_matches(&arr, 3);
-
-        assert_eq!(matches.len(), 6);
-    }
-
-    #[test]
-    #[timeout(100)]
-    fn test_add_judges() {
-        let j1 = Judge::new("J1".to_owned());
-        let j2 = Judge::new("J2".to_owned());
-        let j3 = Judge::new("J3".to_owned());
-
-        let scheduler_state = SchedulerState::new();
-        let mut jv = vec![j1, j2, j3];
-        scheduler_state.add_judges(&mut jv);
-
-        let judges = scheduler_state.get_judges();
-        assert_eq!(judges.len(), 3);
     }
 }

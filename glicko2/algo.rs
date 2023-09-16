@@ -35,7 +35,7 @@ impl Glicko2 {
     }
 
     pub fn new() -> Self {
-        Self::from_glicko1_vars(1500f64, 0.06, 350f64)
+        Self::from_glicko1_vars(1500f64, 0.5, 350f64)
     }
 
     fn update_glicko2_vars(

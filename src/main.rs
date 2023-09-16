@@ -1,5 +1,5 @@
-mod glicko2;
 mod scheduler;
+mod elo;
 
 use axum::{
     extract::State,
@@ -7,9 +7,9 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
-use scheduler::{Item, Judge, MatchPair, MatchWinner, SchedulerError};
+use scheduler::{Item, Judge, MatchPair, MatchWinner};
 use serde::{Deserialize, Serialize};
-use std::{error::Error, net::SocketAddr, sync::Arc};
+use std::{net::SocketAddr, sync::Arc};
 
 #[tokio::main]
 async fn main() {

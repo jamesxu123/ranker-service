@@ -1,5 +1,5 @@
-mod scheduler;
 mod elo;
+mod scheduler;
 
 use axum::{
     extract::State,

@@ -17,11 +17,7 @@ async fn main() {
 
     let state = scheduler::SchedulerState::new();
 
-    // build our application with a route
     let app = Router::new()
-        // `GET /` goes to `root`
-        .route("/", get(root))
-        // `POST /users` goes to `create_user`
         .route("/judge", post(create_judge).get(get_judges))
         .route("/item", post(create_item).get(get_items))
         .route("/scheduler_start", post(start_matchmaking))
@@ -38,11 +34,6 @@ async fn main() {
         .await
         .unwrap();
     tracing::debug!("listening on {}", addr);
-}
-
-// basic handler that responds with a static string
-async fn root() -> &'static str {
-    "Hello, World!"
 }
 
 async fn get_judges(

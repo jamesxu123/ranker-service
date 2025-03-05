@@ -181,7 +181,8 @@ impl SchedulerState {
             MatchWinner::A => {
                 let s1_elo = s1.score;
                 let s2_elo = s2.score;
-                let (r1, r2) = elo::algo::calculate(s1_elo, s2_elo, elo::algo::K, elo::algo::Winner::P1);
+                let (r1, r2) =
+                    elo::algo::calculate(s1_elo, s2_elo, elo::algo::K, elo::algo::Winner::P1);
                 s1.score = r1;
                 s2.score = r2;
                 true
@@ -189,7 +190,8 @@ impl SchedulerState {
             MatchWinner::B => {
                 let s1_elo = s1.score;
                 let s2_elo = s2.score;
-                let (r1, r2) = elo::algo::calculate(s1_elo, s2_elo, elo::algo::K, elo::algo::Winner::P2);
+                let (r1, r2) =
+                    elo::algo::calculate(s1_elo, s2_elo, elo::algo::K, elo::algo::Winner::P2);
                 s1.score = r1;
                 s2.score = r2;
                 true

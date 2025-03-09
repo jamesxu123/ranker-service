@@ -129,10 +129,6 @@ impl Judge {
         }
     }
 
-    pub fn from_id(email: String, id: String) -> Self {
-        Self { id, email }
-    }
-
     pub fn log_match_action(&self) {
         println!("match logged");
     }
@@ -321,7 +317,7 @@ impl SchedulerState {
             States::NoState => Err(Box::new(SchedulerError::new(
                 "Cannot get next match while in NONE state",
             ))),
-            States::Init => self.get_from_queue(0).unwrap(),
+            States::Init => self.fetch_from_queue(0).unwrap(),
             States::Continuous => self.get_continuous_stage(),
             States::End => Err(Box::new(SchedulerError::new(
                 "Cannot get next match while in END state",
@@ -329,7 +325,7 @@ impl SchedulerState {
         }
     }
 
-    fn get_from_queue(&self, min_prio: i32) -> Option<Result<Arc<MatchPair>, Box<SchedulerError>>> {
+    fn fetch_from_queue(&self, min_prio: i32) -> Option<Result<Arc<MatchPair>, Box<SchedulerError>>> {
         let q = self.mq.write().unwrap();
         let matches = self.get_matches();
         if let Some(best) = q.peek_min() {
@@ -349,7 +345,7 @@ impl SchedulerState {
     }
 
     fn get_continuous_stage(&self) -> Result<Arc<MatchPair>, Box<SchedulerError>> {
-        if let Some(Ok(queue_item)) = self.get_from_queue(1) {
+        if let Some(Ok(queue_item)) = self.fetch_from_queue(1) {
             return Ok(queue_item);
         }
 

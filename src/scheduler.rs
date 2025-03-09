@@ -340,7 +340,7 @@ impl SchedulerState {
                 Some(Err(Box::new(SchedulerError::new("Match key not found"))))
             }
         } else {
-            Some(Err(Box::new(SchedulerError::new("Could not peek queue"))))
+            Some(Err(Box::new(SchedulerError::new("Queue peak failed!"))))
         }
     }
 
